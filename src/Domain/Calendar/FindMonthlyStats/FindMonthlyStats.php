@@ -11,4 +11,19 @@ use App\Infrastructure\CQRS\Query\Query;
  */
 final readonly class FindMonthlyStats implements Query
 {
+    public function __construct(
+        private ?int $year = null,
+        private ?\App\Domain\Activity\SportType\SportType $sportType = null,
+    ) {
+    }
+
+    public function getYear(): ?int
+    {
+        return $this->year;
+    }
+
+    public function getSportType(): ?\App\Domain\Activity\SportType\SportType
+    {
+        return $this->sportType;
+    }
 }

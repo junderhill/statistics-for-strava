@@ -215,6 +215,78 @@ final readonly class DbalActivityRepository extends DbalRepository implements Ac
     }
 
     /**
+     * @param \DateTimeImmutable|null $since
+     * @param SportType|null $sportType
+     * @param int $page
+     * @param int $limit
+     *
+     * @return array{activities: Activities, totalCount: int, page: int, limit: int, totalPages: int}
+     */
+    public function findAllWithFilters(
+        ?\DateTimeImmutable $since,
+        ?SportType $sportType,
+        int $page = 1,
+        int $limit = 50,
+    ): array {
+        $offset = ($page - 1) * $limit;
+
+        $queryBuilder = $this->connection->createQueryBuilder();
+        $queryBuilder->select('*')
+            ->from('Activity');
+
+        if ($since !== null) {
+            $queryBuilder->andWhere('startDateTime >= :since')
+                ->setParameter('since', $since->format('Y-m-d H:i:s'));
+        }
+
+        if ($sportType !== null) {
+            $queryBuilder->andWhere('sportType = :sportType')
+                ->setParameter('sportType', $sportType->value);
+        }
+
+        $queryBuilder->orderBy('startDateTime', 'DESC')
+            ->setMaxResults($limit)
+            ->setFirstResult($offset);
+
+        $results = $queryBuilder->executeQuery()->fetchAllAssociative();
+        $activities = Activities::fromArray(array_map($this->hydrate(...), $results));
+
+        $totalCount = $this->countWithFilters($since, $sportType);
+        $totalPages = (int) ceil($totalCount / $limit);
+
+        return [
+            'activities' => $activities,
+            'totalCount' => $totalCount,
+            'page' => $page,
+            'limit' => $limit,
+            'totalPages' => $totalPages,
+        ];
+    }
+
+    /**
+     * @param \DateTimeImmutable|null $since
+     * @param SportType|null $sportType
+     */
+    public function countWithFilters(?\DateTimeImmutable $since, ?SportType $sportType): int
+    {
+        $queryBuilder = $this->connection->createQueryBuilder();
+        $queryBuilder->select('COUNT(*)')
+            ->from('Activity');
+
+        if ($since !== null) {
+            $queryBuilder->andWhere('startDateTime >= :since')
+                ->setParameter('since', $since->format('Y-m-d H:i:s'));
+        }
+
+        if ($sportType !== null) {
+            $queryBuilder->andWhere('sportType = :sportType')
+                ->setParameter('sportType', $sportType->value);
+        }
+
+        return (int) $queryBuilder->executeQuery()->fetchOne();
+    }
+
+    /**
      * @param array<string, mixed> $result
      */
     private function hydrate(array $result): Activity

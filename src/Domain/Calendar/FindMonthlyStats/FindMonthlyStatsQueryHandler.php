@@ -28,19 +28,33 @@ final readonly class FindMonthlyStatsQueryHandler implements QueryHandler
     {
         assert($query instanceof FindMonthlyStats);
 
-        $results = $this->connection->executeQuery(
-            <<<SQL
-                SELECT strftime('%Y-%m', startDateTime) AS yearAndMonth,
-                       sportType,
-                       COUNT(*) AS numberOfActivities,
-                       SUM(distance) AS totalDistance,
-                       SUM(elevation) AS totalElevation,
-                       SUM(movingTimeInSeconds) AS totalMovingTime,
-                       SUM(calories) as totalCalories
-                FROM Activity
-                GROUP BY yearAndMonth, sportType
-            SQL,
-        )->fetchAllAssociative();
+        $sql = <<<SQL
+            SELECT strftime('%Y-%m', startDateTime) AS yearAndMonth,
+                   sportType,
+                   COUNT(*) AS numberOfActivities,
+                   SUM(distance) AS totalDistance,
+                   SUM(elevation) AS totalElevation,
+                   SUM(movingTimeInSeconds) AS totalMovingTime,
+                   SUM(calories) as totalCalories
+            FROM Activity
+            WHERE 1=1
+        SQL;
+
+        $params = [];
+
+        if ($query->getYear() !== null) {
+            $sql .= ' AND strftime(\'%Y\', startDateTime) = :year';
+            $params['year'] = (string) $query->getYear();
+        }
+
+        if ($query->getSportType() !== null) {
+            $sql .= ' AND sportType = :sportType';
+            $params['sportType'] = $query->getSportType()->value;
+        }
+
+        $sql .= ' GROUP BY yearAndMonth, sportType';
+
+        $results = $this->connection->executeQuery($sql, $params)->fetchAllAssociative();
 
         $statsPerMonth = [];
         $activityTypes = ActivityTypes::empty();
@@ -66,21 +80,34 @@ final readonly class FindMonthlyStatsQueryHandler implements QueryHandler
         $minMaxDatePerActivityType = [];
         /** @var ActivityType $activityType */
         foreach ($activityTypes as $activityType) {
-            /** @var non-empty-array<string, string> $result */
-            $result = $this->connection->executeQuery(
-                <<<SQL
+            $sql = <<<SQL
                 SELECT MIN(startDateTime) AS minStartDate,
                        MAX(startDateTime) AS maxStartDate
                 FROM Activity
                 WHERE sportType IN (:sportTypes)
-                SQL,
-                [
-                    'sportTypes' => $activityType->getSportTypes()->map(fn (SportType $sportType) => $sportType->value),
-                ],
-                [
-                    'sportTypes' => ArrayParameterType::STRING,
-                ]
-            )->fetchAssociative();
+            SQL;
+
+            $params = [
+                'sportTypes' => $activityType->getSportTypes()->map(fn (SportType $sportType) => $sportType->value),
+            ];
+            $paramTypes = [
+                'sportTypes' => ArrayParameterType::STRING,
+            ];
+
+            if ($query->getYear() !== null) {
+                $sql .= ' AND strftime(\'%Y\', startDateTime) = :year';
+                $params['year'] = (string) $query->getYear();
+                $paramTypes['year'] = \PDO::PARAM_STR;
+            }
+
+            if ($query->getSportType() !== null) {
+                $sql .= ' AND sportType = :sportType';
+                $params['sportType'] = $query->getSportType()->value;
+                $paramTypes['sportType'] = \PDO::PARAM_STR;
+            }
+
+            /** @var non-empty-array<string, string> $result */
+            $result = $this->connection->executeQuery($sql, $params, $paramTypes)->fetchAssociative();
 
             $minMaxDatePerActivityType[] = [
                 'activityType' => $activityType,
